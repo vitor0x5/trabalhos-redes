@@ -30,7 +30,8 @@ class Conexao:
         self.message += message
       
     def remover_comando(self):
-        self.message = self.message.split(b'\n')[0]
+        # self.message = self.message.split(b'\n')[0]
+        self.message = b""
     
     def get_mensagem(self):
         return self.message
