@@ -16,6 +16,10 @@ def sair(conexao):
     print(conexao, 'conexão fechada')
     conexao.fechar()
 
+def get_destinatario(destinatario):
+    if validar_apelido(destinatario):
+        return apelidosDicionario[destinatario.upper()]
+
 
 def dados_recebidos(conexao, dados):
     if dados == b'':
@@ -35,7 +39,6 @@ def dados_recebidos(conexao, dados):
             args = mensagemCompleta.split(b" ")
             args[1] = args[1].replace(b"\r", b"")
             if(validar_nome(args[1])):
-                print(validar_apelido(args[1]))
                 if(validar_apelido(args[1])):
                     mensagemEnviar = b':server 433 %s %s :Nickname is already in use\r\n' % (apelido, args[1])
                 else:
@@ -45,15 +48,27 @@ def dados_recebidos(conexao, dados):
                         mensagemEnviar = b':server 001 %s :Welcome\r\n' % args[1]
                         mensagemEnviar += b':server 422 %s :MOTD File is missing\r\n' % args[1]
                     else:
+                        del apelidosDicionario[apelido.upper()]
                         mensagemEnviar = b':%s NICK %s\r\n' % (apelido, args[1])
-
             else:
                 mensagemEnviar = b":server 432 %s %s :Erroneous nickname\r\n" % (apelido, args[1])
 
+        elif mensagemCompleta.startswith(b"PRIVMSG"):
+            args = mensagemCompleta.split(b" ")
+            destinatario = args[1]
+            conteudo = mensagemCompleta.replace(b"PRIVMSG " + destinatario + b" ", b"")
+            if(destinatario.startswith(b"#")):
+                print()
+            elif validar_apelido(destinatario):   
+                destinatarioConexao = get_destinatario(destinatario)
+                print(b':%s PRIVMSG %s :%s\r\n' % (apelido, destinatario, conteudo))
+                destinatarioConexao.enviar(b':%s PRIVMSG %s %s\n' % (apelido, destinatario, conteudo))
+
         conexao.remover_comando()
         dados = dados.replace(comando[0] + b"\n", b"")
-        print(mensagemEnviar)
-        conexao.enviar(mensagemEnviar)  
+        if(mensagemEnviar != b""):
+            conexao.enviar(mensagemEnviar)  
+            # print(mensagemEnviar)
     
     if dados != "":
         conexao.salvar_mensagem_incompleta(dados) 
