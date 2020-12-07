@@ -16,6 +16,7 @@ class Conexao:
         self.s, _ = accept_tuple
         self.message = b''
         self.apelido = b'*'
+        self.canais = []
 
     def registrar_recebedor(self, callback):
         asyncio.get_event_loop().add_reader(self.s, lambda: callback(self, self.s.recv(8192)))
@@ -29,17 +30,4 @@ class Conexao:
     
     def salvar_mensagem_incompleta(self, message):
         self.message += message
-      
-    def remover_comando(self):
-        # self.message = self.message.split(b'\n')[0]
-        self.message = b""
-    
-    def get_mensagem(self):
-        return self.message
-
-    def get_apelido(self):
-        return self.apelido
-
-    def set_apelido(self, newApelido):
-        self.apelido = newApelido
 

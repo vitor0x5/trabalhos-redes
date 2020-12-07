@@ -3,7 +3,27 @@ import asyncio
 from tcp import Servidor
 import re
 
+class Canal:
+    def __init__(self, nome):
+        self.nome = nome
+        self.membros = []
+    
+    def adicionar_membro(self, membro):
+        self.membros.append(membro)
+
+    def get_membros(self):
+        return self.membros
+    
+    def remover_membro(self, membro):
+        self.membros.remove(membro)
+    
+    def get_nome(self):
+        return self.nome
+
 apelidosDicionario = dict([])
+conexaoDicionario = dict([])
+canais = dict([])
+dados_residuais = b""
 
 
 def validar_nome(nome):
@@ -12,7 +32,77 @@ def validar_nome(nome):
 def validar_apelido(apelido):
     return apelido.upper() in apelidosDicionario
 
+def validar_canal(canal):
+    return canal.upper() in canais
+
+def entrar_canal(canal, apelido, conexao):
+    canais[canal.upper()].adicionar_membro(apelido)
+    membros = canais[canal.upper()].get_membros()
+    membros.sort()
+    # conexao.set_canal(canal)
+
+    mensagemTodos = b':%s JOIN :%s\r\n' % (apelido, canal)
+    enviar_canal(canal, mensagemTodos, "")
+
+    mensagem = b":server 353 %s = %s :" % (apelido, canal)
+    for membro in membros:
+        if len(mensagem) + len(membro) > 512 :
+            mensagem += b"\r\n"
+            conexao.enviar(mensagem)
+            mensagem = b":server 353 %s = %s :" % (apelido, canal)
+        mensagem += membro
+        if membro != membros[len(membros) -1]:
+            mensagem += b" "
+    mensagem += b"\r\n"
+    conexao.enviar(mensagem)
+    mensagem = b":server 366 %s %s :End of /NAMES list.\r\n" % (apelido, canal)
+    print(mensagem)
+    conexao.enviar(mensagem)
+
+def criar_canal(nomeCanal, apelido, conexao):
+    canal = Canal(nomeCanal)
+    canais[nomeCanal.upper()] = canal
+    entrar_canal(nomeCanal, apelido, conexao)
+
+def get_canal(canal):
+    if validar_canal(canal):
+        return canais[canal.upper()]
+
+def sair_canal(canal, apelido, conexao):
+    if(validar_canal(canal)):
+        canais[canal.upper()].remover_membro(apelido)
+        mensagem = b":%s PART %s\r\n" % (apelido, canal)
+        conexao.enviar(mensagem)
+        enviar_canal(canal, mensagem, apelido)
+
+def enviar_canal(nomeCanal, mensagem, remetente):
+    if(validar_canal(nomeCanal)):
+        canal = get_canal(nomeCanal)
+        membros = canal.get_membros()
+        for membro in membros:
+            if membro != remetente:
+                destinatarioConexao = get_destinatario(membro)
+                destinatarioConexao.enviar(mensagem)
+
 def sair(conexao):
+    if conexao in conexaoDicionario:
+        apelido = conexaoDicionario[conexao]
+    else:
+        apelido = b"*"
+
+    mensagem = b":%s QUIT :Connection closed\r\n" % apelido
+
+    canaisDesseUsuario = []
+    for canal in canais:
+        if apelido in canais[canal].get_membros():
+            canaisDesseUsuario.append(canal)
+
+    for canal in canaisDesseUsuario:
+        enviar_canal(canal, mensagem, apelido)
+        canalConexao = get_canal(canal)
+        canalConexao.remover_membro(apelido)
+
+    del apelidosDicionario[apelido.upper()]
     print(conexao, 'conexão fechada')
     conexao.fechar()
 
@@ -20,17 +110,21 @@ def get_destinatario(destinatario):
     if validar_apelido(destinatario):
         return apelidosDicionario[destinatario.upper()]
 
-
 def dados_recebidos(conexao, dados):
+    global dados_residuais
+    
     if dados == b'':
         return sair(conexao)
-    
-    apelido = conexao.get_apelido()
+
+    if conexao in conexaoDicionario:
+        apelido = conexaoDicionario[conexao]
+    else:
+        apelido = b"*"
 
     while(dados.find(b"\n") != -1):
         mensagemEnviar = b""
         comando = dados.split(b'\n')
-        mensagemCompleta = conexao.get_mensagem() + comando[0]
+        mensagemCompleta = dados_residuais + comando[0]
         if mensagemCompleta.startswith(b"PING"):
             args = mensagemCompleta.split(b" ")
             mensagemEnviar = b":server PONG server :" + args[1] + b"\n"
@@ -43,7 +137,7 @@ def dados_recebidos(conexao, dados):
                     mensagemEnviar = b':server 433 %s %s :Nickname is already in use\r\n' % (apelido, args[1])
                 else:
                     apelidosDicionario[args[1].upper()] = conexao
-                    conexao.set_apelido(args[1])
+                    conexaoDicionario[conexao] = args[1]
                     if(apelido == b"*"):
                         mensagemEnviar = b':server 001 %s :Welcome\r\n' % args[1]
                         mensagemEnviar += b':server 422 %s :MOTD File is missing\r\n' % args[1]
@@ -58,20 +152,44 @@ def dados_recebidos(conexao, dados):
             destinatario = args[1]
             conteudo = mensagemCompleta.replace(b"PRIVMSG " + destinatario + b" ", b"")
             if(destinatario.startswith(b"#")):
-                print()
+                mensagemCanal = b":%s PRIVMSG %s %s\n" % (apelido, destinatario, conteudo)
+                enviar_canal(destinatario, mensagemCanal, apelido)
+
             elif validar_apelido(destinatario):   
                 destinatarioConexao = get_destinatario(destinatario)
-                print(b':%s PRIVMSG %s :%s\r\n' % (apelido, destinatario, conteudo))
                 destinatarioConexao.enviar(b':%s PRIVMSG %s %s\n' % (apelido, destinatario, conteudo))
 
-        conexao.remover_comando()
+        elif mensagemCompleta.startswith(b"JOIN"):
+            args = mensagemCompleta.split(b" ")
+            canal = args[1]
+            canal = canal.replace(b"\r", b"")
+            canal = canal.replace(b"\n", b"")
+            canalNome = canal.replace(b"#", b"")
+            if canal.startswith(b"#") & validar_nome(canalNome):
+                if validar_canal(canal):
+                    entrar_canal(canal, apelido, conexao)
+                else:
+                    criar_canal(canal, apelido, conexao)
+            else:
+                conexao.enviar(b":server 403 %s :No such channel\r\n" % canal)
+
+        elif mensagemCompleta.startswith(b"PART"):
+            args = mensagemCompleta.split(b" ")
+            canal = args[1]
+            canal = canal.replace(b"\r", b"")
+            canal = canal.replace(b"\n", b"")
+            sair_canal(canal, apelido, conexao)
+
+
+        # conexao.remover_comando()
+        dados_residuais = b""
         dados = dados.replace(comando[0] + b"\n", b"")
         if(mensagemEnviar != b""):
             conexao.enviar(mensagemEnviar)  
-            # print(mensagemEnviar)
     
     if dados != "":
-        conexao.salvar_mensagem_incompleta(dados) 
+        # conexao.salvar_mensagem_incompleta(dados) 
+        dados_residuais += dados
         
 
 def conexao_aceita(conexao):
