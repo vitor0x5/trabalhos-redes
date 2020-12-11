@@ -34,10 +34,9 @@ class Servidor:
 
         if (flags & FLAGS_SYN) == FLAGS_SYN:
             # A flag SYN estar setada significa que é um cliente tentando estabelecer uma conexão nova
-            # TODO: talvez você precise passar mais coisas para o construtor de conexão
-            conexao = self.conexoes[id_conexao] = Conexao(self, id_conexao)
-            # TODO: você precisa fazer o handshake aceitando a conexão. Escolha se você acha melhor
-            seq_no_to_send = random.randint(0, 0xffff)
+            seq_no_to_send = random.randint(0, 0xffff) # Define o seq_no desse lado da conexão
+            conexao = self.conexoes[id_conexao] = Conexao(self, id_conexao, seq_no_to_send, ack_no + 1, dst_addr, dst_port, src_addr, src_port)
+            # Handshake aceitando a conexão
             ack_no += seq_no + 1
             header = make_header(dst_port, src_port, seq_no_to_send, ack_no, FLAGS_SYN|FLAGS_ACK)
             header = fix_checksum(header, dst_addr, src_addr)
@@ -48,17 +47,26 @@ class Servidor:
                 self.callback(conexao)
         elif id_conexao in self.conexoes:
             # Passa para a conexão adequada se ela já estiver estabelecida
-            self.conexoes[id_conexao]._rdt_rcv(seq_no, ack_no, flags, payload)
+            # Verifica se o pacote recebido é o esperado
+            if seq_no == self.get_seq_no + 1:
+                self.conexoes[id_conexao]._rdt_rcv(seq_no, ack_no, flags, payload)
         else:
             print('%s:%d -> %s:%d (pacote associado a conexão desconhecida)' %
                   (src_addr, src_port, dst_addr, dst_port))
 
 
 class Conexao:
-    def __init__(self, servidor, id_conexao):
+    def __init__(self, servidor, id_conexao, seq_no, ack_no, src_addr, src_port, dst_addr, dst_port):
         self.servidor = servidor
         self.id_conexao = id_conexao
         self.callback = None
+        self.seq_no = seq_no
+        self.ack_no = ack_no
+        self.src_addr = src_addr
+        self.src_port = src_port
+        self.dst_addr = dst_addr
+        self.dst_port = dst_port
+
         self.timer = asyncio.get_event_loop().call_later(1, self._exemplo_timer)  # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
         #self.timer.cancel()   # é possível cancelar o timer chamando esse método; esta linha é só um exemplo e pode ser removida
 
@@ -69,7 +77,20 @@ class Conexao:
     def _rdt_rcv(self, seq_no, ack_no, flags, payload):
         # TODO: trate aqui o recebimento de segmentos provenientes da camada de rede.
         # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
+        self.callback(self, payload)
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
+        tam_payload = len(payload)
+
+        # Verificando se esse pacote é o correto
+        if tam_payload == (seq_no - self.seq_no):
+            self.seq_no = seq_no + 1
+
+            # Header que será enviado para confirmar o recebimento
+            # seq_no = ack_no + 1 (próximo pacote que o outro lado da conexao espera receber)
+            # ack_no = seq_no (Próximo pacote que esse lado da conexão espera receber)
+            make_header(self.src_port, self.dst_port, ack_no, seq_no, FLAGS_ACK)
+            self.servidor.rede.enviar('', self.dst_addr)
+
         print('recebido payload: %r' % payload)
 
     # Os métodos abaixo fazem parte da API
@@ -97,3 +118,6 @@ class Conexao:
         """
         # TODO: implemente aqui o fechamento de conexão
         pass
+
+    def get_seq_no(self):
+        return self.seq_no
