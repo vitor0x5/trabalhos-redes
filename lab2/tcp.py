@@ -48,7 +48,11 @@ class Servidor:
                 self.callback(conexao)
         elif id_conexao in self.conexoes:
             # Passa para a conexão adequada se ela já estiver estabelecida
-            self.conexoes[id_conexao]._rdt_rcv(seq_no, ack_no, flags, payload)
+
+            # Verifica se recebeu o pacote correto
+            if seq_no == self.conexoes[id_conexao].seq_no:
+                self.conexoes[id_conexao]._rdt_rcv(seq_no, ack_no, flags, payload)
+
         else:
             print('%s:%d -> %s:%d (pacote associado a conexão desconhecida)' %
                   (src_addr, src_port, dst_addr, dst_port))
@@ -59,9 +63,8 @@ class Conexao:
         self.servidor = servidor
         self.id_conexao = id_conexao
         self.callback = None
-        self.start_of_seq_no = seq_no
-        self.seq_no = seq_no
-        print(str(seq_no) + 'created\n')
+        self.start_of_seq_no = seq_no + 1
+        self.seq_no = seq_no + 1
         self.ack_no = ack_no
         self.src_addr = src_addr
         self.src_port = src_port
@@ -79,19 +82,15 @@ class Conexao:
         # TODO: trate aqui o recebimento de segmentos provenientes da camada de rede.
         # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
         self.callback(self, payload)
-        # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
-        tam_payload = len(payload)
-        print(str(tam_payload) + 'tam_payload\n')
-        print(seq_no - self.seq_no - 1)
 
-        # Verificando se esse pacote é o correto
-        if tam_payload == (seq_no - self.seq_no - 1):
-            self.seq_no = seq_no
-            # Header que será enviado para confirmar o recebimento
-            # seq_no = ack_no + 1 (próximo pacote que o outro lado da conexao espera receber)
-            # ack_no = seq_no (Próximo pacote que esse lado da conexão espera receber)
-            make_header(self.src_port, self.dst_port, ack_no, seq_no, FLAGS_ACK)
-            self.servidor.rede.enviar('', self.dst_addr)
+        # proximo a ser recebido
+        self.seq_no = seq_no + len(payload)
+
+        # Header que será enviado para confirmar o recebimento
+        # seq_no = ack_no  (próximo pacote que o outro lado da conexao espera receber)
+        # ack_no = seq_no + len(payload) (Próximo pacote que esse lado da conexão espera receber)
+        make_header(self.src_port, self.dst_port, ack_no, seq_no, FLAGS_ACK)
+        self.servidor.rede.enviar('', self.dst_addr)
 
         print('recebido payload: %r' % payload)
 
