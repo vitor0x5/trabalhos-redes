@@ -47,9 +47,7 @@ class Servidor:
                 self.callback(conexao)
         elif id_conexao in self.conexoes:
             # Passa para a conexão adequada se ela já estiver estabelecida
-            # Verifica se o pacote recebido é o esperado
-            if seq_no == self.get_seq_no + 1:
-                self.conexoes[id_conexao]._rdt_rcv(seq_no, ack_no, flags, payload)
+            self.conexoes[id_conexao]._rdt_rcv(seq_no, ack_no, flags, payload)
         else:
             print('%s:%d -> %s:%d (pacote associado a conexão desconhecida)' %
                   (src_addr, src_port, dst_addr, dst_port))
