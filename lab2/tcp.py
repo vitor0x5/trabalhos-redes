@@ -34,10 +34,11 @@ class Servidor:
 
         if (flags & FLAGS_SYN) == FLAGS_SYN:
             # A flag SYN estar setada significa que é um cliente tentando estabelecer uma conexão nova
-            seq_no_to_send = random.randint(0, 0xffff) # Define o seq_no desse lado da conexão
-            conexao = self.conexoes[id_conexao] = Conexao(self, id_conexao, seq_no_to_send, ack_no + 1, dst_addr, dst_port, src_addr, src_port)
+
+            conexao = self.conexoes[id_conexao] = Conexao(self, id_conexao, seq_no, ack_no + 1, dst_addr, dst_port, src_addr, src_port)
             # Handshake aceitando a conexão
             ack_no += seq_no + 1
+            seq_no_to_send = random.randint(0, 0xffff)  # Define o seq_no desse lado da conexão
             header = make_header(dst_port, src_port, seq_no_to_send, ack_no, FLAGS_SYN|FLAGS_ACK)
             header = fix_checksum(header, dst_addr, src_addr)
             # pode enviar um payload futuramente
@@ -58,7 +59,9 @@ class Conexao:
         self.servidor = servidor
         self.id_conexao = id_conexao
         self.callback = None
+        self.start_of_seq_no = seq_no
         self.seq_no = seq_no
+        print(str(seq_no) + 'created\n')
         self.ack_no = ack_no
         self.src_addr = src_addr
         self.src_port = src_port
@@ -78,11 +81,12 @@ class Conexao:
         self.callback(self, payload)
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
         tam_payload = len(payload)
+        print(str(tam_payload) + 'tam_payload\n')
+        print(seq_no - self.seq_no - 1)
 
         # Verificando se esse pacote é o correto
-        if tam_payload == (seq_no - self.seq_no):
-            self.seq_no = seq_no + 1
-
+        if tam_payload == (seq_no - self.seq_no - 1):
+            self.seq_no = seq_no
             # Header que será enviado para confirmar o recebimento
             # seq_no = ack_no + 1 (próximo pacote que o outro lado da conexao espera receber)
             # ack_no = seq_no (Próximo pacote que esse lado da conexão espera receber)
