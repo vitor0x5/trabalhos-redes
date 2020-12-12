@@ -42,7 +42,7 @@ class Servidor:
             header = make_header(dst_port, src_port, seq_no_to_send, ack_no, FLAGS_SYN|FLAGS_ACK)
             header = fix_checksum(header, dst_addr, src_addr)
             # pode enviar um payload futuramente
-            conexao.enviar(header, src_addr)
+            conexao.enviar(header)
 
             if self.callback:
                 self.callback(conexao)
