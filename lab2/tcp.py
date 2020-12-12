@@ -89,7 +89,7 @@ class Conexao:
         # Header que será enviado para confirmar o recebimento
         # seq_no = ack_no  (próximo pacote que o outro lado da conexao espera receber)
         # ack_no = seq_no + len(payload) (Próximo pacote que esse lado da conexão espera receber)
-        header = make_header(self.src_port, self.dst_port, ack_no, seq_no, FLAGS_ACK)
+        header = make_header(self.src_port, self.dst_port, ack_no, self.seq_no, FLAGS_ACK)
         self.servidor.rede.enviar(header, self.dst_addr)
 
         print('recebido payload: %r' % payload)
