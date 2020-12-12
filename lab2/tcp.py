@@ -103,13 +103,13 @@ class Conexao:
         """
         self.callback = callback
 
-    def enviar(self, dados, dest_addr):
+    def enviar(self, dados):
         """
         Usado pela camada de aplicação para enviar dados
         """
         # TODO: implemente aqui o envio de dados.
         # Chame self.servidor.rede.enviar(segmento, dest_addr) para enviar o segmento
-        self.servidor.rede.enviar(dados, dest_addr)
+        self.servidor.rede.enviar(dados, self.dst_addr)
         # que você construir para a camada de rede.
         pass
 
