@@ -65,9 +65,8 @@ class Conexao:
         self.servidor = servidor
         self.id_conexao = id_conexao
         self.callback = None
-        self.start_of_seq_no = seq_no + 1
-        self.seq_no = seq_no + 1
-        self.ack_no = ack_no
+        self.seq_no = seq_no + 1   # ACK da outra ponta
+        self.ack_no = ack_no       # SEQ da outra ponta
         self.src_addr = src_addr
         self.src_port = src_port
         self.dst_addr = dst_addr
@@ -90,9 +89,10 @@ class Conexao:
             self.seq_no = self.seq_no + 1
             self.ack_no = ack_no
 
+            # Confirmando o fechamento
             header = make_header(self.src_port, self.dst_port, ack_no, self.seq_no, FLAGS_ACK)
             self.servidor.rede.enviar(header, self.dst_addr)
-            self.closed = True
+            self.closed = True    # De agora em diante todos os dados recebidos nessa conexão serão ignorados
         elif not self.closed:
             # Passando dados para a camada de aplicação
             self.callback(self, payload)
