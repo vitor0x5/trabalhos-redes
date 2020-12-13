@@ -2,6 +2,8 @@ import asyncio
 from tcputils import *
 import random
 
+import struct
+
 
 class Servidor:
     def __init__(self, rede, porta):
@@ -42,7 +44,7 @@ class Servidor:
             header = make_header(dst_port, src_port, seq_no_to_send, ack_no, FLAGS_SYN|FLAGS_ACK)
             header = fix_checksum(header, dst_addr, src_addr)
             # pode enviar um payload futuramente
-            conexao.enviar(header)
+            conexao.enviar(header, 1)
 
             if self.callback:
                 self.callback(conexao)
@@ -84,14 +86,14 @@ class Conexao:
         self.callback(self, payload)
 
         # proximo a ser recebido
-        self.seq_no = seq_no + len(payload)
-
+        self.seq_no = self.seq_no + len(payload)
+        self.ack_no = ack_no
         # Header que será enviado para confirmar o recebimento
         # seq_no = ack_no  (próximo pacote que o outro lado da conexao espera receber)
         # ack_no = seq_no + len(payload) (Próximo pacote que esse lado da conexão espera receber)
-        header = make_header(self.src_port, self.dst_port, ack_no, self.seq_no, FLAGS_ACK)
-        self.servidor.rede.enviar(header, self.dst_addr)
-
+        if len(payload) > 0:
+            header = make_header(self.src_port, self.dst_port, ack_no, self.seq_no, FLAGS_ACK)
+            self.servidor.rede.enviar(header, self.dst_addr)
         print('recebido payload: %r' % payload)
 
     # Os métodos abaixo fazem parte da API
@@ -103,14 +105,29 @@ class Conexao:
         """
         self.callback = callback
 
-    def enviar(self, dados):
+    def enviar(self, dados, syn = 0):
+        resto_payload = b''
         """
         Usado pela camada de aplicação para enviar dados
         """
         # TODO: implemente aqui o envio de dados.
         # Chame self.servidor.rede.enviar(segmento, dest_addr) para enviar o segmento
-        self.servidor.rede.enviar(dados, self.dst_addr)
         # que você construir para a camada de rede.
+        if syn == 0:  # Enviando pacotes normais (dados contém somente o payload)
+            header = make_header(self.src_port, self.dst_port, self.ack_no, self.seq_no, FLAGS_ACK)
+            if len(dados) <= MSS:
+                dados = header + dados
+            else:
+                resto_payload = dados[MSS:]
+                dados = header + dados[:MSS]
+
+            dados = fix_checksum(dados, self.src_addr, self.dst_addr)
+
+        self.servidor.rede.enviar(dados, self.dst_addr)
+        self.ack_no += len(dados) - 20
+
+        if len(resto_payload) != 0:   # Enviando o resto do payload (caso tenha)
+            self.enviar(resto_payload)
         pass
 
     def fechar(self):
