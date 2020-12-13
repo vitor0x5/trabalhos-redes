@@ -72,6 +72,7 @@ class Conexao:
         self.src_port = src_port
         self.dst_addr = dst_addr
         self.dst_port = dst_port
+        self.closed = False
 
         self.timer = asyncio.get_event_loop().call_later(1, self._exemplo_timer)  # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
         #self.timer.cancel()   # é possível cancelar o timer chamando esse método; esta linha é só um exemplo e pode ser removida
@@ -82,17 +83,28 @@ class Conexao:
 
     def _rdt_rcv(self, seq_no, ack_no, flags, payload):
         # Recebimento de segmentos provenientes da camada de rede.
-        # Passando dados para a camada de aplicação
-        self.callback(self, payload)
 
-        # proximo a ser recebido
-        self.seq_no = self.seq_no + len(payload)
-        self.ack_no = ack_no
-        # Header que será enviado para confirmar o recebimento
-        if len(payload) > 0:
+        if flags & FLAGS_FIN == FLAGS_FIN:
+            # Passando payload vazio para a camada de aplicação indicando que a conexão será fechada
+            self.callback(self, b'')
+            self.seq_no = self.seq_no + 1
+            self.ack_no = ack_no
+
             header = make_header(self.src_port, self.dst_port, ack_no, self.seq_no, FLAGS_ACK)
             self.servidor.rede.enviar(header, self.dst_addr)
-        print('recebido payload: %r' % payload)
+            self.closed = True
+        elif not self.closed:
+            # Passando dados para a camada de aplicação
+            self.callback(self, payload)
+
+            # proximo a ser recebido
+            self.seq_no = self.seq_no + len(payload)
+            self.ack_no = ack_no
+            # Header que será enviado para confirmar o recebimento
+            if len(payload) > 0:
+                header = make_header(self.src_port, self.dst_port, ack_no, self.seq_no, FLAGS_ACK)
+                self.servidor.rede.enviar(header, self.dst_addr)
+            # print('recebido payload: %r' % payload)
 
     # Os métodos abaixo fazem parte da API
 
@@ -131,7 +143,8 @@ class Conexao:
         """
         Usado pela camada de aplicação para fechar a conexão
         """
-        # TODO: implemente aqui o fechamento de conexão
+        header = make_header(self.src_port, self.dst_port, self.ack_no, self.seq_no, FLAGS_FIN)
+        self.servidor.rede.enviar(header, self.dst_addr)
         pass
 
     def get_seq_no(self):
