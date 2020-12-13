@@ -39,7 +39,7 @@ class Servidor:
 
             conexao = self.conexoes[id_conexao] = Conexao(self, id_conexao, seq_no, ack_no + 1, dst_addr, dst_port, src_addr, src_port)
             # Handshake aceitando a conexão
-            ack_no += seq_no + 1
+            ack_no += seq_no + 1    # Próximo pacote esperado
             seq_no_to_send = random.randint(0, 0xffff)  # Define o seq_no desse lado da conexão
             header = make_header(dst_port, src_port, seq_no_to_send, ack_no, FLAGS_SYN|FLAGS_ACK)
             header = fix_checksum(header, dst_addr, src_addr)
@@ -81,16 +81,14 @@ class Conexao:
         print('Este é um exemplo de como fazer um timer')
 
     def _rdt_rcv(self, seq_no, ack_no, flags, payload):
-        # TODO: trate aqui o recebimento de segmentos provenientes da camada de rede.
-        # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
+        # Recebimento de segmentos provenientes da camada de rede.
+        # Passando dados para a camada de aplicação
         self.callback(self, payload)
 
         # proximo a ser recebido
         self.seq_no = self.seq_no + len(payload)
         self.ack_no = ack_no
         # Header que será enviado para confirmar o recebimento
-        # seq_no = ack_no  (próximo pacote que o outro lado da conexao espera receber)
-        # ack_no = seq_no + len(payload) (Próximo pacote que esse lado da conexão espera receber)
         if len(payload) > 0:
             header = make_header(self.src_port, self.dst_port, ack_no, self.seq_no, FLAGS_ACK)
             self.servidor.rede.enviar(header, self.dst_addr)
@@ -106,25 +104,24 @@ class Conexao:
         self.callback = callback
 
     def enviar(self, dados, syn = 0):
-        resto_payload = b''
+        resto_payload = b'' # Guarda o resto do payload caso ele seja maior que o tamanho máximo permitido
         """
         Usado pela camada de aplicação para enviar dados
         """
-        # TODO: implemente aqui o envio de dados.
-        # Chame self.servidor.rede.enviar(segmento, dest_addr) para enviar o segmento
-        # que você construir para a camada de rede.
-        if syn == 0:  # Enviando pacotes normais (dados contém somente o payload)
+        # envia o segmento para a camada de rede.
+        if syn == 0:  # Enviando pacotes normais ('dados' contém somente o payload)
             header = make_header(self.src_port, self.dst_port, self.ack_no, self.seq_no, FLAGS_ACK)
+            # Verificando o tamanho do payload
             if len(dados) <= MSS:
                 dados = header + dados
-            else:
+            else:       # Payload maior que o tamanho maximo (MSS)
                 resto_payload = dados[MSS:]
                 dados = header + dados[:MSS]
 
             dados = fix_checksum(dados, self.src_addr, self.dst_addr)
 
         self.servidor.rede.enviar(dados, self.dst_addr)
-        self.ack_no += len(dados) - 20
+        self.ack_no += len(dados) - 20  # Próximo pacote esperado pela outra ponta
 
         if len(resto_payload) != 0:   # Enviando o resto do payload (caso tenha)
             self.enviar(resto_payload)
