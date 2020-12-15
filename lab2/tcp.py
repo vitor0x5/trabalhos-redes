@@ -91,6 +91,7 @@ class Conexao:
 
             # Confirmando o fechamento
             header = make_header(self.src_port, self.dst_port, ack_no, self.seq_no, FLAGS_ACK)
+            fix_checksum(header, self.src_addr, self.dst_addr)
             self.servidor.rede.enviar(header, self.dst_addr)
             self.closed = True    # De agora em diante todos os dados recebidos nessa conexão serão ignorados
         elif not self.closed:
@@ -103,6 +104,7 @@ class Conexao:
             # Header que será enviado para confirmar o recebimento
             if len(payload) > 0:
                 header = make_header(self.src_port, self.dst_port, ack_no, self.seq_no, FLAGS_ACK)
+                fix_checksum(header, self.src_addr, self.dst_addr)
                 self.servidor.rede.enviar(header, self.dst_addr)
             # print('recebido payload: %r' % payload)
 
@@ -144,6 +146,7 @@ class Conexao:
         Usado pela camada de aplicação para fechar a conexão
         """
         header = make_header(self.src_port, self.dst_port, self.ack_no, self.seq_no, FLAGS_FIN)
+        fix_checksum(header, self.src_addr, self.dst_addr)
         self.servidor.rede.enviar(header, self.dst_addr)
         pass
 
