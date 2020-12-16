@@ -1,6 +1,7 @@
 import asyncio
 from tcputils import *
 import random
+from collections import deque 
 
 import struct
 
@@ -67,18 +68,14 @@ class Conexao:
         self.callback = None
         self.seq_no = seq_no + 1   # ACK da outra ponta
         self.ack_no = ack_no       # SEQ da outra ponta
+        self.sendbase = seq_no
         self.src_addr = src_addr
         self.src_port = src_port
         self.dst_addr = dst_addr
         self.dst_port = dst_port
         self.closed = False
-
-        self.timer = asyncio.get_event_loop().call_later(1, self._exemplo_timer)  # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
-        #self.timer.cancel()   # é possível cancelar o timer chamando esse método; esta linha é só um exemplo e pode ser removida
-
-    def _exemplo_timer(self):
-        # Esta função é só um exemplo e pode ser removida
-        print('Este é um exemplo de como fazer um timer')
+        self.timer_esta_rodando = False 
+        self.fila_de_segmentos = deque([])  # Fila com o segmentos aguardando confirmação de recebimento
 
     def _rdt_rcv(self, seq_no, ack_no, flags, payload):
         # Recebimento de segmentos provenientes da camada de rede.
@@ -95,6 +92,18 @@ class Conexao:
             self.servidor.rede.enviar(header, self.dst_addr)
             self.closed = True    # De agora em diante todos os dados recebidos nessa conexão serão ignorados
         elif not self.closed:
+            
+            # Verificando o timer
+            if ack_no > self.sendbase:
+                self.sendbase = ack_no
+                if len(self.fila_de_segmentos) > 1:
+                    self.fila_de_segmentos.popleft()
+
+                    if len(self.fila_de_segmentos) == 0:
+                        self.cancelar_timer()
+                    else:
+                        self.inicia_timer(1)
+
             # Passando dados para a camada de aplicação
             self.callback(self, payload)
 
@@ -135,7 +144,12 @@ class Conexao:
             dados = fix_checksum(dados, self.src_addr, self.dst_addr)
 
         self.servidor.rede.enviar(dados, self.dst_addr)
+        self.fila_de_segmentos.append(dados) # Colocando na fila para aguardar confirmação
+                                             # de recebimento da outra ponta
         self.ack_no += len(dados) - 20  # Próximo pacote esperado pela outra ponta
+
+        if self.timer_esta_rodando == False:
+            self.inicia_timer(1)
 
         if len(resto_payload) != 0:   # Enviando o resto do payload (caso tenha)
             self.enviar(resto_payload)
@@ -152,3 +166,17 @@ class Conexao:
 
     def get_seq_no(self):
         return self.seq_no
+
+    def inicia_timer(self, time):
+        self.timer = asyncio.get_event_loop().call_later(time, self.timeout)
+        self.timer_esta_rodando = True
+
+    def cancelar_timer(self):
+        self.timer.cancel()
+        self.timer_esta_rodando = False
+
+    def timeout(self):
+        # Reenviar o primeiro segmento da fila e reiniciar o timer
+        dados = self.fila_de_segmentos.popleft()
+        self.fila_de_segmentos.appendleft(dados)  # Recolocando esse segmento no inicio da fila
+        self.servidor.rede.enviar(dados, self.dst_addr)
