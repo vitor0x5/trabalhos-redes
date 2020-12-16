@@ -94,11 +94,9 @@ class Conexao:
         elif not self.closed:
             
             # Verificando o timer
-            if ack_no > self.sendbase:
-                self.sendbase = ack_no
-                if len(self.fila_de_segmentos) > 1:
+            if seq_no > self.sendbase and (flags & FLAGS_ACK) == FLAGS_ACK:
+                if len(self.fila_de_segmentos) > 0:
                     self.fila_de_segmentos.popleft()
-
                     if len(self.fila_de_segmentos) == 0:
                         self.cancelar_timer()
                     else:
