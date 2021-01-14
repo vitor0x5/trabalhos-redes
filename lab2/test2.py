@@ -75,8 +75,8 @@ seq_list.append(seq_no)
 seq_no += len(payload)
 esperado += payload
 
-# print('esperado: %r' % esperado)
-# print('recebido: %r' % recebido)
+print('esperado: %r' % esperado)
+print('recebido: %r' % recebido)
 assert esperado == recebido
 
 payload = os.urandom(random.randint(16, MSS))

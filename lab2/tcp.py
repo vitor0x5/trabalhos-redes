@@ -4,6 +4,7 @@ import random
 from collections import deque 
 
 import struct
+import time
 
 
 class Servidor:
@@ -43,6 +44,7 @@ class Servidor:
             ack_no += seq_no + 1    # Próximo pacote esperado
             seq_no_to_send = random.randint(0, 0xffff)  # Define o seq_no desse lado da conexão
             header = make_header(dst_port, src_port, seq_no_to_send, ack_no, FLAGS_SYN|FLAGS_ACK)
+            
             header = fix_checksum(header, dst_addr, src_addr)
             # pode enviar um payload futuramente
             conexao.enviar(header, 1)
@@ -77,6 +79,18 @@ class Conexao:
         self.timer_esta_rodando = False 
         self.fila_de_segmentos = deque([])  # Fila com o segmentos aguardando confirmação de recebimento
 
+        
+        #tempo
+        
+        self.sampleRTT = None
+        self.estimatedRTT = None
+        self.devRTT = None
+        self.primeiro_tempo = True
+        self.tempo_inicial = None
+        self.tempo_final = None
+        self.timeout_interval = 2
+        self.timer = None
+        
     def _rdt_rcv(self, seq_no, ack_no, flags, payload):
         # Recebimento de segmentos provenientes da camada de rede.
 
@@ -93,16 +107,31 @@ class Conexao:
             self.closed = True    # De agora em diante todos os dados recebidos nessa conexão serão ignorados
         elif not self.closed:
             
+            print("******************************")
+            print("ack_no: %d" %ack_no)
+            print("self.ack_no: %d" %self.ack_no)
+            print("******************************")
+            
+            if self.ack_no == ack_no:
+                self.tempo_final = time.time()
+                print("ack_no recebido: %d" %ack_no)
+                self.calcularRTT()
+            
             # Verificando o timer
             if seq_no > self.sendbase and (flags & FLAGS_ACK) == FLAGS_ACK:
+                
                 if len(self.fila_de_segmentos) > 0:
                     self.fila_de_segmentos.popleft()
                     if len(self.fila_de_segmentos) == 0:
+                        print("timer cancelado")
                         self.cancelar_timer()
                     else:
-                        self.inicia_timer(1)
+                        print("timer receive")
+                        self.inicia_timer(self.timeout_interval)
 
             # Passando dados para a camada de aplicação
+            print("desativando tempo")
+            self.timer = None
             self.callback(self, payload)
 
             # proximo a ser recebido
@@ -146,8 +175,10 @@ class Conexao:
                                              # de recebimento da outra ponta
         self.ack_no += len(dados) - 20  # Próximo pacote esperado pela outra ponta
 
-        if self.timer_esta_rodando == False:
-            self.inicia_timer(1)
+        if not self.timer_esta_rodando:
+            self.tempo_inicial = time.time()
+            print("ack_no enviado: %d" %self.ack_no)
+            self.inicia_timer(self.timeout_interval)
 
         if len(resto_payload) != 0:   # Enviando o resto do payload (caso tenha)
             self.enviar(resto_payload)
@@ -166,15 +197,39 @@ class Conexao:
         return self.seq_no
 
     def inicia_timer(self, time):
+        self.cancelar_timer()
         self.timer = asyncio.get_event_loop().call_later(time, self.timeout)
-        self.timer_esta_rodando = True
+        
 
     def cancelar_timer(self):
-        self.timer.cancel()
-        self.timer_esta_rodando = False
+        if self.timer:
+            self.timer.cancel()
+            self.timer = None
+            self.timer_esta_rodando = False
 
     def timeout(self):
         # Reenviar o primeiro segmento da fila e reiniciar o timer
+        #self.timer_esta_rodando = True
+        self.timer = None
         dados = self.fila_de_segmentos.popleft()
         self.fila_de_segmentos.appendleft(dados)  # Recolocando esse segmento no inicio da fila
         self.servidor.rede.enviar(dados, self.dst_addr)
+        self.tempo_inicial = time.time()
+        self.inicia_timer(self.timeout_interval)
+        
+    def calcularRTT(self):
+        self.sampleRTT = self.tempo_final - self.tempo_inicial
+        
+        print("sampleRTT: %f" %self.sampleRTT)
+        alfa = 0.125
+        beta = 0.25
+        
+        if self.primeiro_tempo:
+            self.primeiro_tempo = False
+            self.estimatedRTT = self.sampleRTT
+            self.devRTT = self.sampleRTT / 2
+        else:
+            self.estimatedRTT = (1 - alfa) * self.estimatedRTT + alfa * self.sampleRTT
+            self.devRTT = (1 - beta) * self.devRTT + beta * abs(self.sampleRTT - self.estimatedRTT)
+        self.timeout_interval = self.estimatedRTT + 4*self.devRTT
+        print("timeout_Interval: %f" %self.timeout_interval)

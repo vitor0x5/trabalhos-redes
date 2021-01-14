@@ -83,7 +83,6 @@ async def main():
 
     ack_no += MSS
     rede.callback(src_addr, dst_addr, fix_checksum(make_header(src_port, dst_port, seq_no, ack_no, FLAGS_ACK), src_addr, dst_addr))
-
     payload = os.urandom(2*MSS)
     conexao.enviar(payload)
     rede.fila.clear()  # descarta
@@ -102,7 +101,6 @@ async def main():
 
     ack_no += MSS
     rede.callback(src_addr, dst_addr, fix_checksum(make_header(src_port, dst_port, seq_no, ack_no, FLAGS_ACK), src_addr, dst_addr))
-
     await asyncio.sleep(1.5)
 
     segmento, _ = rede.fila.pop(0)
